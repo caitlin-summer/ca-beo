@@ -1,0 +1,466 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Đại Dương Đa Sắc - Vercel Edition</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Quicksand:wght@500;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            margin: 0; overflow: hidden; background-color: #a2d2ff;
+            touch-action: none; font-family: 'Quicksand', sans-serif;
+            overscroll-behavior-y: none; /* Disable pull-to-refresh */
+        }
+        canvas { display: block; }
+        #ui-layer {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            pointer-events: none; display: flex; justify-content: center; align-items: center; z-index: 10;
+        }
+        .interactive { pointer-events: auto; }
+        #hud {
+            position: absolute; top: 15px; left: 15px;
+            pointer-events: none; display: flex; flex-direction: column; gap: 8px; z-index: 20;
+        }
+        .stats-card {
+            background: rgba(255, 255, 255, 0.85); padding: 8px 15px; border-radius: 15px;
+            backdrop-filter: blur(8px); border: 2px solid white; display: flex;
+            align-items: center; gap: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.05);
+        }
+        #timer-display {
+            position: absolute; top: 15px; left: 50%; transform: translateX(-50%);
+            background: rgba(255, 255, 255, 0.85); padding: 5px 15px; border-radius: 12px;
+            font-weight: 800; color: #f97316; backdrop-filter: blur(8px); border: 2px solid white; z-index: 20;
+        }
+        .heart { color: #ff4d6d; font-size: 18px; }
+        .heart-empty { color: #d1d5db; }
+        .modal {
+            background: rgba(255, 255, 255, 0.98); border-radius: 40px; border: 8px solid #f1f8ff;
+            box-shadow: 0 20px 50px rgba(0,0,0,0.1); width: 90%; max-width: 400px; padding: 24px; text-align: center;
+        }
+        .lb-tab { padding: 6px 12px; border-radius: 12px; font-size: 10px; font-weight: bold; color: #888; background: #f0f4f8; cursor: pointer; white-space: nowrap; transition: 0.2s; }
+        .lb-tab.active { background: #ffc8dd; color: #d64d7b; box-shadow: 0 2px 5px rgba(214, 77, 123, 0.2); }
+        .leaderboard-item { background: white; padding: 10px 12px; border-radius: 12px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; font-size: 13px; border: 1px solid #f0f4f8; }
+        .status-badge {
+            background: rgba(255, 255, 255, 0.9); padding: 4px 10px; border-radius: 10px;
+            font-size: 11px; font-weight: bold; display: flex; align-items: center; gap: 5px;
+            border: 1px solid white; box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+    </style>
+</head>
+<body>
+
+    <canvas id="gameCanvas"></canvas>
+
+    <div id="hud" class="hidden">
+        <div class="stats-card">
+            <div>
+                <span class="text-[10px] font-bold text-gray-400 uppercase">Điểm</span>
+                <div class="text-xl font-black text-pink-500 leading-none" id="score">0</div>
+            </div>
+            <div class="w-[1px] h-8 bg-gray-200"></div>
+            <div id="combo-ui" class="hidden">
+                <span class="text-[10px] font-bold text-orange-400 uppercase">Combo</span>
+                <div class="text-xl font-black text-orange-500 leading-none" id="combo-text">x1</div>
+            </div>
+            <div id="lives-container" class="flex gap-1"></div>
+        </div>
+        <div id="status-effects" class="flex flex-col gap-2 mt-2 pointer-events-none"></div>
+    </div>
+
+    <div id="timer-display" class="hidden">⏳ <span id="timer">30</span>s</div>
+
+    <div id="ui-layer">
+        <div id="start-screen" class="interactive modal">
+            <h1 class="text-4xl font-black mb-1 text-[#8ecae6]">CÁ BÉO 🫧</h1>
+            <p class="mb-8 text-gray-400 text-sm font-bold italic">Bản Public Offline - Vercel Ready</p>
+            <div class="flex flex-col gap-3">
+                <button onclick="startGame('lives')" class="bg-[#ffc8dd] text-[#d64d7b] border-b-4 border-[#ffafcc] font-bold py-4 px-8 rounded-full text-lg shadow-md transition-all active:translate-y-1">SINH TỒN ❤️</button>
+                <button onclick="startGame('timed')" class="bg-blue-300 text-white border-b-4 border-blue-400 font-bold py-4 px-8 rounded-full text-lg shadow-md transition-all active:translate-y-1">30S THỬ THÁCH ⏱️</button>
+                <button onclick="showLeaderboardView()" class="text-blue-400 font-bold py-2 text-sm hover:underline mt-2">🏆 Bảng Xếp Hạng</button>
+            </div>
+        </div>
+
+        <div id="leaderboard-view" class="interactive modal hidden">
+            <h2 class="text-2xl font-black mb-4 text-blue-400 uppercase">Bảng Vàng</h2>
+            <div class="flex justify-center gap-1 mb-4" id="main-lb-tabs">
+                <div class="lb-tab active" onclick="changeLeaderboardTab('all', 'lb-view-list', 'main-lb-tabs')">Tổng</div>
+                <div class="lb-tab" onclick="changeLeaderboardTab('day', 'lb-view-list', 'main-lb-tabs')">Ngày</div>
+                <div class="lb-tab" onclick="changeLeaderboardTab('week', 'lb-view-list', 'main-lb-tabs')">Tuần</div>
+                <div class="lb-tab" onclick="changeLeaderboardTab('month', 'lb-view-list', 'main-lb-tabs')">Tháng</div>
+            </div>
+            <div id="lb-view-list" class="max-h-[250px] overflow-y-auto mb-6 pr-1"></div>
+            <button onclick="hideLeaderboardView()" class="bg-gray-100 text-gray-500 font-bold py-3 px-10 rounded-full text-sm w-full">QUAY LẠI</button>
+        </div>
+
+        <div id="game-over-screen" class="interactive modal hidden">
+            <h2 id="game-over-title" class="text-2xl font-black mb-1 text-pink-400 uppercase">KẾT THÚC!</h2>
+            <p class="text-lg text-gray-400 mb-4">Bạn đạt: <span id="final-score" class="font-bold text-pink-500 text-2xl">0</span> điểm</p>
+            <div id="save-score-container" class="mb-4 bg-pink-50 p-4 rounded-3xl border-2 border-pink-100">
+                <div class="flex gap-2">
+                    <input type="text" id="username-input" placeholder="Tên..." maxlength="12" class="flex-1 p-2 rounded-xl border-2 border-white text-center text-xs font-bold focus:outline-none">
+                    <button id="save-score-btn" class="bg-pink-400 text-white px-4 py-2 rounded-xl font-bold text-sm">LƯU</button>
+                </div>
+            </div>
+            <div class="flex justify-center gap-1 mb-2" id="end-lb-tabs">
+                <div class="lb-tab active" onclick="changeLeaderboardTab('all', 'end-lb-list', 'end-lb-tabs')">Top</div>
+                <div class="lb-tab" onclick="changeLeaderboardTab('day', 'end-lb-list', 'end-lb-tabs')">Ngày</div>
+            </div>
+            <div id="end-lb-list" class="max-h-[140px] overflow-y-auto mb-4 pr-1"></div>
+            <button onclick="resetToMenu()" class="bg-[#ffc8dd] text-[#d64d7b] border-b-4 border-[#ffafcc] font-bold py-3 px-10 rounded-full text-lg shadow-md w-full">CHƠI TIẾP</button>
+        </div>
+    </div>
+
+    <script type="module">
+        // --- Web Audio API Synth Engine ---
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        const SoundManager = {
+            playEat() {
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(600, audioCtx.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(100, audioCtx.currentTime + 0.1);
+                gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.1);
+                osc.connect(gain); gain.connect(audioCtx.destination);
+                osc.start(); osc.stop(audioCtx.currentTime + 0.1);
+            },
+            playHit() {
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.type = 'square';
+                osc.frequency.setValueAtTime(150, audioCtx.currentTime);
+                osc.frequency.linearRampToValueAtTime(40, audioCtx.currentTime + 0.2);
+                gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
+                gain.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 0.2);
+                osc.connect(gain); gain.connect(audioCtx.destination);
+                osc.start(); osc.stop(audioCtx.currentTime + 0.2);
+            },
+            playBoss() {
+                const now = audioCtx.currentTime;
+                for(let i=0; i<3; i++) {
+                    const osc = audioCtx.createOscillator();
+                    const gain = audioCtx.createGain();
+                    osc.type = 'sawtooth';
+                    osc.frequency.setValueAtTime(200, now + i*0.2);
+                    osc.frequency.linearRampToValueAtTime(800, now + i*0.2 + 0.1);
+                    gain.gain.setValueAtTime(0.1, now + i*0.2);
+                    gain.gain.linearRampToValueAtTime(0, now + i*0.2 + 0.1);
+                    osc.connect(gain); gain.connect(audioCtx.destination);
+                    osc.start(now + i*0.2); osc.stop(now + i*0.2 + 0.1);
+                }
+            }
+        };
+
+        // --- Offline LocalStorage System ---
+        const LB_KEY = 'fish_game_offline_lb';
+        const Leaderboard = {
+            save(name, score) {
+                const data = JSON.parse(localStorage.getItem(LB_KEY) || '[]');
+                data.push({ name: name || 'Cá Ẩn Danh', score, timestamp: Date.now() });
+                localStorage.setItem(LB_KEY, JSON.stringify(data));
+            },
+            get(filter = 'all') {
+                const data = JSON.parse(localStorage.getItem(LB_KEY) || '[]');
+                const now = Date.now();
+                const dayMs = 86400000;
+                let filtered = data;
+                if (filter === 'day') filtered = data.filter(d => (now - d.timestamp) < dayMs);
+                else if (filter === 'week') filtered = data.filter(d => (now - d.timestamp) < dayMs * 7);
+                else if (filter === 'month') filtered = data.filter(d => (now - d.timestamp) < dayMs * 30);
+                return filtered.sort((a, b) => b.score - a.score).slice(0, 10);
+            }
+        };
+
+        // --- Logic & Constants ---
+        const PASTEL_PALETTE = ['#ffadad', '#ffd6a5', '#fdffb6', '#caffbf', '#9bf6ff', '#a0c4ff', '#bdb2ff', '#ffc6ff'];
+        const BOSS_COLOR = '#455a64'; 
+        const spriteCache = {};
+        
+        let canvas, ctx, animationId, gameActive = false, score = 0, frameCount = 0;
+        let enemies = [], bubbles = [], particles = [], floatingTexts = [], items = [];
+        let timeLeft = 30, timerInterval, difficulty = 0, gameMode = 'lives';
+        let shakeTime = 0, shakeIntensity = 0;
+        let comboCount = 0, lastEatTime = 0;
+        let boss = null, warningTimer = 0;
+
+        const player = { 
+            x: 0, y: 0, radius: 18, targetX: 0, targetY: 0, 
+            vx: 0, vy: 0, maxSpeed: 9, friction: 0.93, 
+            lives: 3, invincible: 0, color: '#FFD700', 
+            buffs: { shield: 0, speed: 0 }, 
+            debuffs: { slow: 0, shrink: 0 } 
+        };
+
+        // --- Sprite Pre-rendering ---
+        function preRenderSprites() {
+            const speciesList = ['fish', 'squid', 'jellyfish', 'shrimp', 'boss'];
+            speciesList.forEach(type => {
+                const colors = type === 'boss' ? [BOSS_COLOR] : PASTEL_PALETTE.concat(['#FFD700']);
+                colors.forEach(color => {
+                    const size = 250; 
+                    const offCanvas = document.createElement('canvas');
+                    offCanvas.width = size; offCanvas.height = size;
+                    const offCtx = offCanvas.getContext('2d');
+                    offCtx.translate(size/2, size/2);
+                    const r = type === 'boss' ? 70 : 40;
+                    if (type === 'fish') drawFishShape(offCtx, r, color);
+                    else if (type === 'squid') drawSquidShape(offCtx, r, color);
+                    else if (type === 'jellyfish') drawJellyfishShape(offCtx, r, color);
+                    else if (type === 'shrimp') drawShrimpShape(offCtx, r, color);
+                    else if (type === 'boss') drawSharkBossShape(offCtx, r, color);
+                    spriteCache[`${type}_${color}`] = offCanvas;
+                });
+            });
+        }
+
+        function drawFishShape(c, r, col) {
+            let bw = r, bh = r * 0.8; c.fillStyle = col; c.beginPath(); c.moveTo(-bw*0.5, 0); c.quadraticCurveTo(-bw*1.5, -bh, -bw*1.2, 0); c.quadraticCurveTo(-bw*1.5, bh, -bw*0.5, 0); c.fill();
+            c.beginPath(); c.ellipse(0, 0, bw, bh, 0, 0, Math.PI * 2); c.fill(); c.strokeStyle = 'rgba(255,255,255,0.4)'; c.lineWidth = 2; c.stroke();
+            c.fillStyle = 'white'; c.beginPath(); c.arc(bw*0.5, -bh*0.2, r*0.18, 0, Math.PI*2); c.fill(); c.fillStyle = '#333'; c.beginPath(); c.arc(bw*0.5+1, -bh*0.2, r*0.08, 0, Math.PI*2); c.fill();
+        }
+        function drawSquidShape(c, r, col) {
+            c.fillStyle = col; c.beginPath(); c.moveTo(r, 0); c.lineTo(-r*0.5, -r*0.8); c.lineTo(-r*0.5, r*0.8); c.closePath(); c.fill(); c.strokeStyle = col; c.lineWidth = 3; 
+            for(let i=-1; i<=1; i++) { c.beginPath(); c.moveTo(-r*0.3, i*r*0.3); c.lineTo(-r*1.4, i*r*0.4); c.stroke(); }
+        }
+        function drawJellyfishShape(c, r, col) {
+            c.fillStyle = col; c.beginPath(); c.arc(0, 0, r, Math.PI, 0); c.fill(); c.strokeStyle = col; c.lineWidth = 2;
+            for(let i=-1; i<=1; i++) { c.beginPath(); c.moveTo(i*r*0.4, 0); c.lineTo(i*r*0.4, r*1.2); c.stroke(); }
+        }
+        function drawShrimpShape(c, r, col) {
+            c.fillStyle = col; for(let i=0; i<3; i++) { c.beginPath(); c.ellipse(-i*r*0.4, 0, r*0.5, r*0.4, 0, 0, Math.PI*2); c.fill(); }
+            c.strokeStyle = col; c.beginPath(); c.moveTo(r*0.4, -r*0.2); c.lineTo(r*1.3, -r*0.8); c.stroke();
+        }
+        function drawSharkBossShape(c, r, color) {
+            c.beginPath(); c.fillStyle = color; c.ellipse(0, 0, r * 1.5, r * 0.7, 0, 0, Math.PI * 2); c.fill();
+            c.beginPath(); c.moveTo(-r * 0.2, -r * 0.5); c.lineTo(r * 0.1, -r * 1.2); c.lineTo(r * 0.5, -r * 0.4); c.fill();
+            c.beginPath(); c.moveTo(-r * 1.2, 0); c.lineTo(-r * 2.0, -r * 0.8); c.lineTo(-r * 1.6, 0); c.lineTo(-r * 2.0, r * 0.8); c.closePath(); c.fill();
+            c.beginPath(); c.moveTo(0, r * 0.2); c.lineTo(-r * 0.5, r * 0.8); c.lineTo(r * 0.2, r * 0.5); c.fill();
+            c.fillStyle = 'white'; for(let i=0; i<3; i++) { c.beginPath(); c.moveTo(r * 0.8 + i*15, r * 0.3); c.lineTo(r * 1.0 + i*15, r * 0.5); c.lineTo(r * 1.2 + i*15, r * 0.3); c.fill(); }
+            c.fillStyle = 'white'; c.beginPath(); c.arc(r * 0.7, -r * 0.2, r * 0.25, 0, Math.PI * 2); c.fill();
+            c.fillStyle = 'red'; c.beginPath(); c.arc(r * 0.8, -r * 0.2, r * 0.12, 0, Math.PI * 2); c.fill();
+            c.strokeStyle = 'rgba(0,0,0,0.2)'; c.lineWidth = 2; c.stroke();
+        }
+
+        function drawEntitySprite(e, alpha = 1) {
+            const sprite = spriteCache[`${e.species}_${e.color}`];
+            if (!sprite) return;
+            ctx.save(); ctx.translate(e.x, e.y);
+            const isFacingLeft = (e.vx || (player.targetX - player.x)) < 0;
+            if (isFacingLeft && e.species !== 'jellyfish') ctx.scale(-1, 1);
+            ctx.globalAlpha = alpha;
+            const displaySize = e.radius * 3.8;
+            ctx.drawImage(sprite, -displaySize/2, -displaySize/2, displaySize, displaySize);
+            if (e === player) {
+                if (player.buffs.shield > 0) { ctx.beginPath(); ctx.arc(0, 0, e.radius * 1.5, 0, Math.PI * 2); ctx.strokeStyle = '#fb8500'; ctx.lineWidth = 3; ctx.setLineDash([5, 5]); ctx.stroke(); }
+                if (player.buffs.speed > 0) { ctx.beginPath(); ctx.arc(0, 0, e.radius * 1.3, 0, Math.PI * 2); ctx.strokeStyle = '#219ebc'; ctx.lineWidth = 2; ctx.stroke(); }
+            }
+            ctx.restore();
+        }
+
+        class Particle {
+            constructor(x, y, color) {
+                this.x = x; this.y = y; this.color = color;
+                this.vx = (Math.random() - 0.5) * 6; this.vy = (Math.random() - 0.5) * 6;
+                this.alpha = 1; this.size = Math.random() * 4 + 2;
+            }
+            update() { this.x += this.vx; this.y += this.vy; this.alpha -= 0.03; }
+            draw(c) { c.save(); c.globalAlpha = this.alpha; c.fillStyle = this.color; c.beginPath(); c.arc(this.x, this.y, this.size, 0, Math.PI * 2); c.fill(); c.restore(); }
+        }
+
+        function handleBossSystem() {
+            if (score > 0 && Math.floor(score / 500) > Math.floor((score - 20) / 500) && !boss && warningTimer === 0) {
+                warningTimer = 180;
+                SoundManager.playBoss();
+            }
+            if (warningTimer > 0) {
+                warningTimer--;
+                drawWarningBanner();
+                if (warningTimer === 1) boss = { x: -400, y: canvas.height / 2, radius: 100, vx: 4, color: BOSS_COLOR, species: 'boss' };
+            }
+            if (boss) {
+                boss.x += boss.vx; boss.y = (canvas.height / 2) + Math.sin(frameCount * 0.025) * 150;
+                drawEntitySprite(boss);
+                if (boss.x > 0 && boss.x < canvas.width) screenShake(4);
+                const d = Math.hypot(player.x - boss.x, player.y - boss.y);
+                if (d < player.radius + boss.radius * 0.8 && player.invincible <= 0 && player.buffs.shield <= 0) {
+                    player.lives--; player.invincible = 120; updateHUD(); 
+                    SoundManager.playHit();
+                    if (player.lives <= 0) endGame();
+                }
+                if (boss.x > canvas.width + 600) boss = null;
+            }
+        }
+
+        function drawWarningBanner() {
+            const alpha = Math.abs(Math.sin(frameCount * 0.1));
+            ctx.save(); ctx.fillStyle = `rgba(183, 28, 28, ${alpha * 0.3})`; ctx.fillRect(0, canvas.height/2 - 80, canvas.width, 160);
+            ctx.font = 'bold 36px Quicksand'; ctx.fillStyle = `rgba(255, 255, 255, ${alpha})`; ctx.textAlign = 'center'; ctx.fillText("⚠️ CÁ MẬP ĐẠI DƯƠNG ĐANG ĐẾN! ⚠️", canvas.width/2, canvas.height/2 + 12); ctx.restore();
+        }
+
+        function screenShake(intensity) { shakeTime = 5; shakeIntensity = intensity; }
+
+        function gameLoop() {
+            if (!gameActive) return; frameCount++; difficulty = Math.min(5, frameCount / 2000);
+            ctx.save(); if (shakeTime > 0) { ctx.translate((Math.random()-0.5)*shakeIntensity, (Math.random()-0.5)*shakeIntensity); shakeTime--; }
+            drawStaticBackground();
+            
+            if (Math.random() < 0.05) bubbles.push({ x: Math.random() * canvas.width, y: canvas.height + 20, radius: Math.random()*5+2, speed: Math.random()*1.5+0.5, opacity: Math.random()*0.4+0.1 });
+            bubbles.forEach((b, i) => { b.y -= b.speed; ctx.beginPath(); ctx.fillStyle = `rgba(255,255,255,${b.opacity})`; ctx.arc(b.x, b.y, b.radius, 0, Math.PI*2); ctx.fill(); if (b.y < -50) bubbles.splice(i, 1); });
+
+            const speedMod = (player.buffs.speed > 0 ? 2.0 : (player.debuffs.slow > 0 ? 0.4 : 1.0));
+            let ax = (player.targetX - player.x) * 0.04, ay = (player.targetY - player.y) * 0.04;
+            player.vx = (player.vx + ax) * player.friction; player.vy = (player.vy + ay) * player.friction;
+            player.x += player.vx * speedMod; player.y += player.vy * speedMod;
+            if (player.invincible > 0) player.invincible--;
+            if (player.buffs.shield > 0) player.buffs.shield--;
+            if (player.buffs.speed > 0) player.buffs.speed--;
+            if (player.debuffs.slow > 0) player.debuffs.slow--;
+            if (player.debuffs.shrink > 0) { player.radius = Math.max(15, player.radius - 0.05); player.debuffs.shrink--; }
+
+            drawEntitySprite({ ...player, species: 'fish' }, (player.invincible > 0 && frameCount % 10 < 5) ? 0.3 : 1);
+            handleBossSystem();
+
+            if (Math.random() < 0.012) {
+                const typeProb = Math.random();
+                let type = typeProb < 0.25 ? 'SHIELD' : (typeProb < 0.5 ? 'SPEED' : (typeProb < 0.75 ? 'TRASH' : 'NET'));
+                let icon = type==='SHIELD' ? '🛡️' : (type==='SPEED' ? '⚡' : (type==='TRASH'?'🥫':'🕸️'));
+                items.push({ x: Math.random()*canvas.width, y: -50, radius: 18, type, icon, vy: 1.5 });
+            }
+            for (let i = items.length - 1; i >= 0; i--) {
+                const it = items[i]; it.y += it.vy; ctx.save(); ctx.translate(it.x, it.y); ctx.font = '24px Arial'; ctx.textAlign = 'center'; ctx.fillText(it.icon, 0, 0); ctx.restore();
+                if (Math.hypot(player.x-it.x, player.y-it.y) < player.radius+20) {
+                    if (it.type==='SHIELD') player.buffs.shield=400; else if (it.type==='SPEED') player.buffs.speed=300; else if (it.type==='TRASH') { player.radius=Math.max(15, player.radius-8); player.debuffs.shrink=120; score=Math.max(0, score-50); } else if (it.type==='NET') player.debuffs.slow=200;
+                    items.splice(i,1); updateHUD();
+                } else if (it.y > canvas.height+50) items.splice(i,1);
+            }
+
+            if (Date.now() - lastEatTime > 1500) comboCount = 0;
+            const spawnRate = (gameMode === 'timed' ? 0.035 : 0.015) + (difficulty * 0.02);
+            if (Math.random() < spawnRate) {
+                const side = Math.random() > 0.5 ? 'left' : 'right';
+                const species = Math.random() < 0.1 ? 'squid' : (Math.random() < 0.2 ? 'jellyfish' : (Math.random() < 0.3 ? 'shrimp' : 'fish'));
+                enemies.push({ x: side === 'left' ? -200 : canvas.width + 200, y: Math.random()*canvas.height, radius: player.radius * (Math.random()<0.8 ? (0.4+Math.random()*0.4) : 1.5+Math.random()*1.4), vx: (Math.random()*0.8+0.6)*(side==='left'?1:-1)*(1+difficulty*0.4), color: PASTEL_PALETTE[Math.floor(Math.random()*PASTEL_PALETTE.length)], species, startY: Math.random()*canvas.height });
+            }
+            for (let i = enemies.length - 1; i >= 0; i--) {
+                const e = enemies[i]; e.x += e.vx; if (e.species === 'jellyfish') e.y = e.startY + Math.sin(frameCount*0.02)*40;
+                drawEntitySprite(e);
+                if (Math.hypot(player.x - e.x, player.y - e.y) < player.radius + e.radius * 0.7) {
+                    if (player.radius > e.radius) {
+                        SoundManager.playEat(); lastEatTime = Date.now(); comboCount++; score += Math.floor(e.radius * (1 + comboCount * 0.2)); player.radius += e.radius * 0.025; for(let p=0; p<8; p++) particles.push(new Particle(e.x, e.y, e.color)); floatingTexts.push({ x: player.x, y: player.y - 20, text: comboCount > 1 ? `Combo x${comboCount}` : `+${Math.floor(e.radius)}`, alpha: 1 }); enemies.splice(i, 1); updateHUD();
+                    } else if (player.invincible <= 0 && player.buffs.shield <= 0) {
+                        SoundManager.playHit(); screenShake(12); player.lives--; player.invincible = 100; updateHUD(); if (player.lives <= 0) endGame();
+                    }
+                }
+                if (e.x < -300 || e.x > canvas.width + 300) enemies.splice(i, 1);
+            }
+            particles.forEach((p, i) => { p.update(); p.draw(ctx); if (p.alpha <= 0) particles.splice(i, 1); });
+            floatingTexts.forEach((ft, i) => { ft.y -= 1; ft.alpha -= 0.02; ctx.save(); ctx.globalAlpha = ft.alpha; ctx.fillStyle = '#ff85a1'; ctx.font = 'bold 16px Quicksand'; ctx.textAlign = 'center'; ctx.fillText(ft.text, ft.x, ft.y); ctx.restore(); if (ft.alpha <= 0) floatingTexts.splice(i, 1); });
+            ctx.restore(); animationId = requestAnimationFrame(gameLoop);
+        }
+
+        // --- HUD & UI Controllers ---
+        function updateHUD() {
+            document.getElementById('score').innerText = Math.floor(score);
+            const comboUI = document.getElementById('combo-ui');
+            if (comboCount > 1) { comboUI.classList.remove('hidden'); document.getElementById('combo-text').innerText = `x${comboCount}`; } else comboUI.classList.add('hidden');
+            const container = document.getElementById('lives-container');
+            if (container) { let h = ''; const max = gameMode === 'timed' ? 1 : 3; for(let i=0; i<max; i++) h += `<span class="heart ${i < player.lives ? '' : 'heart-empty'}">❤️</span>`; container.innerHTML = h; }
+            const statusContainer = document.getElementById('status-effects');
+            if (statusContainer) {
+                let s = '';
+                if (player.buffs.shield > 0) s += `<div class="status-badge text-orange-500">🛡️ ${Math.ceil(player.buffs.shield/60)}s</div>`;
+                if (player.buffs.speed > 0) s += `<div class="status-badge text-cyan-500">⚡ ${Math.ceil(player.buffs.speed/60)}s</div>`;
+                if (player.debuffs.slow > 0) s += `<div class="status-badge text-red-500">🕸️ ${Math.ceil(player.debuffs.slow/60)}s</div>`;
+                if (player.debuffs.shrink > 0) s += `<div class="status-badge text-red-400">🥫 Teo nhỏ</div>`;
+                statusContainer.innerHTML = s;
+            }
+        }
+
+        async function renderLeaderboard(containerId, timeFilter = 'all') {
+            const container = document.getElementById(containerId); if (!container) return;
+            container.innerHTML = '<p class="text-gray-400 italic py-10 text-center text-xs">Đang tải...</p>';
+            const displayData = Leaderboard.get(timeFilter);
+            if (displayData.length === 0) { container.innerHTML = '<p class="text-gray-400 py-10 text-center text-xs italic">Trống</p>'; return; }
+            container.innerHTML = displayData.map((d, i) => `<div class="leaderboard-item"><span class="font-bold">#${i+1} ${d.name}</span><span class="font-black text-blue-500">${d.score}</span></div>`).join('');
+        }
+
+        window.changeLeaderboardTab = (filter, listId, tabId) => {
+            document.querySelectorAll(`#${tabId} .lb-tab`).forEach(t => t.classList.remove('active'));
+            event.currentTarget.classList.add('active'); renderLeaderboard(listId, filter);
+        };
+
+        window.showLeaderboardView = () => {
+            document.getElementById('start-screen').classList.add('hidden');
+            document.getElementById('leaderboard-view').classList.remove('hidden');
+            renderLeaderboard('lb-view-list', 'all');
+        };
+        window.hideLeaderboardView = () => {
+            document.getElementById('leaderboard-view').classList.add('hidden');
+            document.getElementById('start-screen').classList.remove('hidden');
+        };
+        window.resetToMenu = () => {
+            document.getElementById('game-over-screen').classList.add('hidden');
+            document.getElementById('start-screen').classList.remove('hidden');
+            drawStaticBackground();
+        };
+
+        window.startGame = function(mode) {
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+            gameActive = true; gameMode = mode;
+            document.getElementById('start-screen').classList.add('hidden');
+            document.getElementById('game-over-screen').classList.add('hidden');
+            document.getElementById('hud').classList.remove('hidden');
+            score = 0; frameCount = 0; difficulty = 0; comboCount = 0; boss = null; warningTimer = 0;
+            player.radius = 18; player.lives = (mode === 'timed' ? 99 : 3);
+            player.x = canvas.width/2; player.y = canvas.height/2; player.targetX = player.x; player.targetY = player.y; player.vx = 0; player.vy = 0;
+            player.buffs = { shield: 0, speed: 0 }; player.debuffs = { slow: 0, shrink: 0 };
+            enemies = []; particles = []; floatingTexts = []; bubbles = []; items = [];
+            if (mode === 'timed') {
+                timeLeft = 30; document.getElementById('timer-display').classList.remove('hidden');
+                timerInterval = setInterval(() => { timeLeft--; document.getElementById('timer').innerText = timeLeft; if (timeLeft <= 0) endGame(); }, 1000);
+            } else document.getElementById('timer-display').classList.add('hidden');
+            updateHUD(); gameLoop();
+        };
+
+        function endGame() {
+            gameActive = false; clearInterval(timerInterval); cancelAnimationFrame(animationId);
+            drawStaticBackground(); enemies.forEach(e => drawEntitySprite(e, 0.4)); drawEntitySprite(player, 0.6);
+            document.getElementById('hud').classList.add('hidden');
+            document.getElementById('timer-display').classList.add('hidden');
+            document.getElementById('game-over-screen').classList.remove('hidden');
+            document.getElementById('final-score').innerText = Math.floor(score);
+            const saveBtn = document.getElementById('save-score-btn');
+            saveBtn.disabled = false; saveBtn.innerText = "LƯU";
+            saveBtn.onclick = () => {
+                const name = document.getElementById('username-input').value.trim();
+                Leaderboard.save(name, Math.floor(score));
+                saveBtn.disabled = true; saveBtn.innerText = "ĐÃ LƯU";
+                renderLeaderboard('end-lb-list', 'all');
+            };
+            renderLeaderboard('end-lb-list', 'all');
+        }
+
+        function drawStaticBackground() {
+            const grad = ctx.createLinearGradient(0, 0, 0, canvas.height);
+            grad.addColorStop(0, '#e0f2fe'); grad.addColorStop(1, '#a2d2ff');
+            ctx.fillStyle = grad; ctx.fillRect(0, 0, canvas.width, canvas.height);
+        }
+
+        function resize() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+            if (!gameActive) drawStaticBackground();
+        }
+
+        window.addEventListener('load', () => {
+            canvas = document.getElementById('gameCanvas'); ctx = canvas.getContext('2d');
+            resize(); preRenderSprites();
+        });
+        window.addEventListener('resize', resize);
+        window.addEventListener('mousemove', (e) => { if (gameActive) { player.targetX = e.clientX; player.targetY = e.clientY; } });
+        window.addEventListener('touchmove', (e) => { if (gameActive) { player.targetX = e.touches[0].clientX; player.targetY = e.touches[0].clientY; } });
+    </script>
+</body>
+</html>
