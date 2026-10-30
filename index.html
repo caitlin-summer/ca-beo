@@ -58,6 +58,7 @@ input{flex:1;min-width:0;padding:9px;border-radius:12px;border:2px solid #fff;te
     <h1>CÁ BÉO 🫧</h1>
     <p class="sub">Bơi, ăn cá, học từ vựng tiếng Anh!</p>
     <div class="pill">📚 Đã thuộc <span id="prog">0</span>/<span id="total">0</span> từ</div>
+    <div class="tabs" id="lv-tabs"><div class="tab on" data-k="easy">Dễ</div><div class="tab" data-k="medium">Trung bình</div><div class="tab" data-k="hard">Khó</div></div>
     <button class="btn pink" onclick="startGame('lives')">SINH TỒN ❤️</button>
     <div style="display:flex;gap:8px"><button class="btn blue" onclick="startGame('timed',30)">30s ⏱️</button><button class="btn blue" onclick="startGame('timed',45)">45s ⏱️</button><button class="btn blue" onclick="startGame('timed',60)">60s ⏱️</button></div>
     <button class="btn ghost" onclick="showLB()">🏆 Bảng xếp hạng</button>
@@ -103,8 +104,8 @@ const SFX={eat:()=>tone('sine',600,150,.1,.25),hit:()=>tone('square',150,40,.2,.
 // ---------- Leaderboard ----------
 const LB='fish_game_offline_lb';
 function lbGet(f){const d=JSON.parse(localStorage.getItem(LB)||'[]'),n=Date.now(),D=864e5,lim={day:D,week:D*7,month:D*30}[f];return d.filter(x=>!lim||n-x.t<lim).sort((a,b)=>b.score-a.score).slice(0,10)}
-function lbSave(name,score){const d=JSON.parse(localStorage.getItem(LB)||'[]');d.push({name:name||'Cá Ẩn Danh',score,t:Date.now()});localStorage.setItem(LB,JSON.stringify(d))}
-function lbRender(listId,f){const d=lbGet(f);$(listId).innerHTML=d.length?d.map((x,i)=>`<div class="row"><b>#${i+1} ${x.name.replace(/</g,'&lt;')}</b><b style="color:#2f8fc7">${x.score}</b></div>`).join(''):'<p style="color:#aab;font-size:12px;padding:20px 0">Trống</p>'}
+function lbSave(name,score){const d=JSON.parse(localStorage.getItem(LB)||'[]');d.push({name:name||'Cá Ẩn Danh',score,t:Date.now(),l:lvKey});localStorage.setItem(LB,JSON.stringify(d))}
+function lbRender(listId,f){const d=lbGet(f);$(listId).innerHTML=d.length?d.map((x,i)=>`<div class="row"><b>#${i+1} ${x.name.replace(/</g,'&lt;')}${x.l&&LV[x.l]?` <small style="color:#9ab">${LV[x.l].n}</small>`:''}</b><b style="color:#2f8fc7">${x.score}</b></div>`).join(''):'<p style="color:#aab;font-size:12px;padding:20px 0">Trống</p>'}
 function lbTabs(tabsId,listId,opts){const el=$(tabsId);el.innerHTML=opts.map(([k,l],i)=>`<div class="tab ${i?'':'on'}" data-k="${k}">${l}</div>`).join('');el.onclick=e=>{const k=e.target.dataset.k;if(!k)return;el.querySelectorAll('.tab').forEach(t=>t.classList.toggle('on',t===e.target));lbRender(listId,k)}}
 lbTabs('lb-tabs','lb-list',[['all','Tổng'],['day','Ngày'],['week','Tuần'],['month','Tháng']]);
 lbTabs('end-tabs','end-list',[['all','Top'],['day','Ngày']]);
@@ -162,6 +163,11 @@ function mk(t,col){const S=t==='boss'?380:256,o=document.createElement('canvas')
 const TOP=76;let sky,vig,cv,ctx,W,H,dpr=1,seabed,Hs,weeds=[],raf,frame=0,playing=false,mode='lives',score=0,timeLeft=30,timerId,difficulty=0;
 let enemies=[],bubbles=[],parts=[],texts=[],items=[],boss=null,warn=0,nextBoss=500,shake=0,combo=0,lastEat=0,noTarget=0,target=WORDS[0],tt;
 let run={learned:new Set(),missed:new Set()};
+const LV={easy:{n:'Dễ',cap:[5,7],sp:[.012,.02],gr:.006,spd:[1.9,1.3],tp:.35,nt:60,item:.0022,big:.25,lives:3,pen:10},medium:{n:'TB',cap:[7,9],sp:[.016,.028],gr:.008,spd:[2.4,1.6],tp:.3,nt:80,item:.003,big:.3,lives:3,pen:15},hard:{n:'Khó',cap:[9,12],sp:[.022,.036],gr:.011,spd:[3,2],tp:.25,nt:110,item:.004,big:.35,lives:2,pen:25}};
+let lv=LV.easy,lvKey='easy';
+function setLv(k){lvKey=k;lv=LV[k];document.querySelectorAll('#lv-tabs .tab').forEach(t=>t.classList.toggle('on',t.dataset.k===k));try{localStorage.setItem('fish_lv',k)}catch(_){}}
+$('lv-tabs').onclick=e=>{if(e.target.dataset.k)setLv(e.target.dataset.k)};
+try{const k=localStorage.getItem('fish_lv');if(LV[k])setLv(k)}catch(_){}
 const P={x:0,y:0,tx:0,ty:0,vx:0,vy:0,radius:24,lives:3,invincible:0,species:'fish',color:GOLD,seed:0,buffs:{shield:0,speed:0},debuffs:{slow:0}};
 
 // ---------- Scene ----------
@@ -207,11 +213,11 @@ function drawPlayer(alpha){
  ctx.restore()}
 function spawn(forceTarget){
  const left=Math.random()>.5,r=Math.random(),species=r<.1?'squid':r<.3?'jelly':r<.45?'shrimp':'fish';
- const isT=forceTarget||Math.random()<.35,w=isT?target:WORDS[Math.random()*WORDS.length|0];
- const small=isT&&w===target||Math.random()<.75;
+ const isT=forceTarget||Math.random()<lv.tp,w=isT?target:WORDS[Math.random()*WORDS.length|0];
+ const small=isT&&w===target||Math.random()>lv.big;
  const radius=P.radius*(small?(isT?.5+Math.random()*.3:.4+Math.random()*.4):1.4+Math.random()*1.3);
  const sy=TOP+45+Math.random()*(H-Hs*.5-TOP-65);
- enemies.push({x:left?-90:W+90,y:sy,sy,radius,species,word:w.en,seed:Math.random()*6,vx:(Math.random()*1+1.1)*(left?1:-1)*(1+difficulty*.4),color:PAL[Math.random()*PAL.length|0]})}
+ enemies.push({x:left?-90:W+90,y:sy,sy,radius,species,word:w.en,seed:Math.random()*6,vx:(Math.random()*lv.spd[1]+lv.spd[0])*(left?1:-1)*(1+difficulty*.4),color:PAL[Math.random()*PAL.length|0]})}
 function pickTarget(){const pool=WORDS.filter(w=>w!==target&&(vocab[w.en]||0)<2),all=WORDS.filter(w=>w!==target),src=pool.length&&Math.random()<.75?pool:all;target=src[Math.random()*src.length|0];$('t-e').textContent=target.e;$('t-vi').textContent=target.vi;noTarget=100}
 function toast(h,ok){const t=$('toast');t.innerHTML=h;t.className='show '+(ok?'ok':'bad');clearTimeout(tt);tt=setTimeout(()=>t.className='',1900)}
 function burst(x,y,col,n){for(let i=0;i<n;i++)parts.push({x,y,col,vx:(Math.random()-.5)*7,vy:(Math.random()-.5)*7,a:1,s:Math.random()*4+2})}
@@ -223,8 +229,8 @@ function eat(e){
   burst(e.x,e.y,'#ffd60a',8);texts.push({x:P.x,y:P.y-30,t:combo>1?`+${pts} x${combo}`:`+${pts}`,a:1,c:'#f08a24'});
   toast(`✅ ${w.e} <b>${w.en}</b> = ${w.vi}`,true);SFX.ok();say(w.en);pickTarget()
  }else{
-  combo=0;score=Math.max(0,score-10);run.missed.add(target);burst(e.x,e.y,e.color,3);SFX.bad();
-  texts.push({x:P.x,y:P.y-30,t:'-10',a:1,c:'#d64d7b'});
+  combo=0;score=Math.max(0,score-lv.pen);run.missed.add(target);burst(e.x,e.y,e.color,3);SFX.bad();
+  texts.push({x:P.x,y:P.y-30,t:'-'+lv.pen,a:1,c:'#d64d7b'});
   toast(`❌ ${w.e} <b>${w.en}</b> = ${w.vi}`,false);say(w.en)}
  updateHUD()}
 function hurt(inv){P.lives--;P.invincible=inv;shake=6;SFX.hit();updateHUD();if(P.lives<=0)endGame()}
@@ -233,18 +239,18 @@ function hurt(inv){P.lives--;P.invincible=inv;shake=6;SFX.hit();updateHUD();if(P
 function step(){
  difficulty=Math.min(5,frame/2000);
  const sm=P.buffs.speed>0?2:P.debuffs.slow>0?.4:1;
- P.vx=(P.tx-P.x)*.14;P.vy=(P.ty-P.y)*.14;{const q=Math.hypot(P.vx,P.vy);if(q>16){P.vx*=16/q;P.vy*=16/q}}P.x+=P.vx*sm;P.y+=P.vy*sm;if(P.y<TOP+12)P.y=TOP+12;
+ P.vx=(P.tx-P.x)*.3;P.vy=(P.ty-P.y)*.3;{const q=Math.hypot(P.vx,P.vy);if(q>30){P.vx*=30/q;P.vy*=30/q}}P.x+=P.vx*sm;P.y+=P.vy*sm;if(P.y<TOP+12)P.y=TOP+12;
  if(P.invincible>0)P.invincible--;for(const k in P.buffs)if(P.buffs[k]>0)P.buffs[k]--;if(P.debuffs.slow>0)P.debuffs.slow--;
  if(P.buffs.speed>0&&frame%6===0)burst(P.x,P.y,'#7fe0e8',1);
  if(frame%10===0)updateHUD();
  if(Date.now()-lastEat>3000&&combo){combo=0;updateHUD()}
- if(Math.random()<.0022){const r=Math.random(),type=r<.25?'SHIELD':r<.5?'SPEED':r<.75?'TRASH':'NET';items.push({x:Math.random()*W,y:-50,type,icon:{SHIELD:'🛡️',SPEED:'⚡',TRASH:'🥫',NET:'🕸️'}[type],vy:1.5,ph:Math.random()*6})}
+ if(Math.random()<lv.item){const r=Math.random(),type=r<.25?'SHIELD':r<.5?'SPEED':r<.75?'TRASH':'NET';items.push({x:Math.random()*W,y:-50,type,icon:{SHIELD:'🛡️',SPEED:'⚡',TRASH:'🥫',NET:'🕸️'}[type],vy:1.5,ph:Math.random()*6})}
  for(let i=items.length-1;i>=0;i--){const it=items[i];it.y+=it.vy;
   if(Math.hypot(P.x-it.x,P.y-it.y)<P.radius+20){
    if(it.type==='SHIELD')P.buffs.shield=400;else if(it.type==='SPEED')P.buffs.speed=300;else if(it.type==='NET')P.debuffs.slow=200;else{P.radius=Math.max(16,P.radius-6);score=Math.max(0,score-50)}
    burst(it.x,it.y,'#fff',3);items.splice(i,1);updateHUD()}else if(it.y>H+50)items.splice(i,1)}
- if(enemies.length<(W<600?5:7)&&Math.random()<(mode==='timed'?.02:.012)+difficulty*.006)spawn(false);
- if(enemies.some(e=>e.word===target.en&&e.radius<P.radius*.95))noTarget=0;else if(++noTarget>60){spawn(true);noTarget=0}
+ if(enemies.length<lv.cap[W<600?0:1]&&Math.random()<lv.sp[mode==='timed'?1:0]+difficulty*lv.gr)spawn(false);
+ if(enemies.some(e=>e.word===target.en&&e.radius<P.radius*.95))noTarget=0;else if(++noTarget>lv.nt){spawn(true);noTarget=0}
  for(let i=enemies.length-1;i>=0;i--){const e=enemies[i];e.x+=e.vx;if(e.species==='jelly')e.y=e.sy+Math.sin(frame*.02+e.seed)*40;
   if(e.x<-300||e.x>W+300){enemies.splice(i,1);continue}
   if(Math.hypot(P.x-e.x,P.y-e.y)<P.radius+e.radius*.7){
@@ -274,13 +280,13 @@ function loop(){
 // ---------- UI ----------
 function updateHUD(){
  $('score').textContent=Math.floor(score);$('combo').classList.toggle('hidden',combo<2);$('combo-b').textContent='x'+combo;
- $('lives').innerHTML=mode==='timed'?'':[0,1,2].map(i=>i<P.lives?'❤️':'🖤').join(' ');
+ $('lives').innerHTML=mode==='timed'?'':Array.from({length:lv.lives},(_,i)=>i<P.lives?'❤️':'🖤').join(' ');
  let s='';if(P.buffs.shield>0)s+=`<div class="badge" style="color:#f08a24">🛡️ ${Math.ceil(P.buffs.shield/60)}s</div>`;if(P.buffs.speed>0)s+=`<div class="badge" style="color:#219ebc">⚡ ${Math.ceil(P.buffs.speed/60)}s</div>`;if(P.debuffs.slow>0)s+=`<div class="badge" style="color:#d64d7b">🕸️ ${Math.ceil(P.debuffs.slow/60)}s</div>`;
  $('fx').innerHTML=s}
 function startGame(m,sec=30){
  if(A&&A.state==='suspended')A.resume();clearInterval(timerId);
  mode=m;playing=true;score=0;frame=0;difficulty=0;combo=0;boss=null;warn=0;nextBoss=500;shake=0;
- P.radius=24;P.lives=m==='timed'?99:3;P.x=P.tx=W/2;P.y=P.ty=H/2;P.vx=P.vy=0;P.invincible=0;P.buffs={shield:0,speed:0};P.debuffs={slow:0};
+ P.radius=24;P.lives=m==='timed'?99:lv.lives;P.x=P.tx=W/2;P.y=P.ty=H/2;P.vx=P.vy=0;P.invincible=0;P.buffs={shield:0,speed:0};P.debuffs={slow:0};
  enemies=[];parts=[];texts=[];items=[];run={learned:new Set(),missed:new Set()};
  ['start','over','lb'].forEach(i=>$(i).classList.add('hidden'));['hud','target'].forEach(i=>$(i).classList.remove('hidden'));
  pickTarget();
